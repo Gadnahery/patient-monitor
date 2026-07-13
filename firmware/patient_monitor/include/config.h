@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 // Wi-Fi
 // ---------------------------------------------------------------------------
-#define WIFI_SSID     "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID     "Redmi Note 10 Pro"
+#define WIFI_PASSWORD "gadna@123456"
 
 // ---------------------------------------------------------------------------
 // Supabase
@@ -19,17 +19,41 @@
 // (Devices page) and paste its generated device_key here. This is how the
 // backend maps a reading to the correct patient without trusting the ESP32
 // to say who it is.
-#define DEVICE_KEY "PASTE_DEVICE_KEY_HERE"
+#define DEVICE_KEY "eWGVwMrSNCq6xK26YYATNzyg"
 
 // ---------------------------------------------------------------------------
 // Pin map - matches the schematic in docs/. Adjust to your wiring.
 // ---------------------------------------------------------------------------
-#define PIN_I2C_SDA   21   // MAX30100 SDA (J1/J4)
-#define PIN_I2C_SCL   22   // MAX30100 SCL (J1/J4)
+#define PIN_I2C_SDA   21   // MAX30100 SDA + LCD SDA, shared bus (J1/J4)
+#define PIN_I2C_SCL   22   // MAX30100 SCL + LCD SCL, shared bus (J1/J4)
 #define PIN_TEMP_ADC  34   // NTC thermistor divider (J3/R7), ADC1-only pin
 #define PIN_BUZZER    19   // Buzzer driver transistor Q3 (R9)
 #define PIN_LED_RED   18   // Alert LED, driven by Q1 (R4/D4)
 #define PIN_LED_GREEN 5    // Status-OK LED, driven by Q2 (R5/D3)
+
+// ---------------------------------------------------------------------------
+// I2C bus - 100kHz standard mode is far more tolerant of breadboard/jumper
+// wiring than the 400kHz default. Bumping into this (bus errors -1/263 from
+// the MAX30100, or a blank LCD) almost always means loose wiring, missing
+// pull-ups, or a bus speed too fast for the wire run, not a code bug.
+// ---------------------------------------------------------------------------
+#define I2C_CLOCK_HZ 100000
+
+// 16x2 I2C character LCD (PCF8574 backpack). 0x27 and 0x3F are the two
+// common backpack addresses - if the screen stays blank, run an I2C scanner
+// sketch to find the real address.
+#define LCD_I2C_ADDRESS 0x27
+#define LCD_COLS 16
+#define LCD_ROWS 2
+
+// How often to retry initializing the MAX30100 if it failed at boot (a loose
+// connection made at power-on won't recover on its own without this).
+#define SENSOR_RETRY_MS 5000
+
+// Require an out-of-range reading to persist across this many consecutive
+// report cycles before sounding the alarm, so one noisy/erratic sample from
+// a flaky I2C bus doesn't trigger a false, continuous-sounding alert.
+#define ALARM_CONFIRM_CYCLES 2
 
 // ---------------------------------------------------------------------------
 // Thermistor (NTC) - series resistor R7 = 4.7k to +5V, thermistor to GND

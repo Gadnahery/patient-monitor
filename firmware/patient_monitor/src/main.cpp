@@ -11,17 +11,62 @@
 #include <Wire.h>
 #include <ArduinoJson.h>
 #include <MAX30100_PulseOximeter.h>
+#include <LiquidCrystal_I2C.h>
 
 #include "config.h"
 
 PulseOximeter pox;
+LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLS, LCD_ROWS);
 
 uint32_t lastReportAt = 0;
 uint32_t lastBeepToggleAt = 0;
+uint32_t lastSensorRetryAt = 0;
+uint32_t lastI2cScanAt = 0;
 bool buzzerOn = false;
+bool sensorReady = false;
+int consecutiveOutOfRange = 0;
 
 void onBeatDetected() {
   Serial.println("Beat detected");
+}
+
+// Diagnostic only: lists every address that ACKs on the shared SDA/SCL bus.
+// Expect 0x57 (MAX30100) and LCD_I2C_ADDRESS (LCD backpack, usually 0x27 or
+// 0x3F). Run this at boot, periodically, and right as the buzzer fires to
+// tell apart three different failure modes on a shared-bus PCB:
+//   - a device missing here at boot            -> bad solder joint/pull-ups
+//   - devices present at boot but drop later    -> noise/ground/power issue
+//   - devices drop specifically when the buzzer -> EMI coupling from the
+//     fires                                        buzzer driver into SDA/SCL
+void scanI2CBus(const char *label) {
+  Serial.printf("I2C scan (%s): ", label);
+  int found = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("0x%02X ", addr);
+      found++;
+    }
+  }
+  if (found == 0) Serial.print("(nothing responded)");
+  Serial.printf(" [%d device%s]\n", found, found == 1 ? "" : "s");
+}
+
+// A loose wire at power-on can leave the sensor undetected forever without
+// this - retry init periodically instead of only once in setup().
+void ensureSensorReady() {
+  if (sensorReady) return;
+  if (millis() - lastSensorRetryAt < SENSOR_RETRY_MS) return;
+  lastSensorRetryAt = millis();
+
+  if (pox.begin()) {
+    pox.setIRLedCurrent(MAX30100_LED_CURR_24MA);
+    pox.setOnBeatDetectedCallback(onBeatDetected);
+    sensorReady = true;
+    Serial.println("MAX30100 ready (recovered)");
+  } else {
+    Serial.println("MAX30100 retry failed, check wiring");
+  }
 }
 
 void connectWiFi() {
@@ -48,6 +93,7 @@ void connectWiFi() {
 // Steinhart-Hart approximation for a series-resistor NTC divider.
 float readTemperatureC() {
   int raw = analogRead(PIN_TEMP_ADC);
+  Serial.printf("Temp ADC raw=%d (0=short/GND, %d=open/3.3V)\n", raw, (int)ADC_MAX_VALUE);
   if (raw <= 0 || raw >= (int)ADC_MAX_VALUE) {
     return NAN; // open circuit / short - sensor fault
   }
@@ -64,12 +110,35 @@ float readTemperatureC() {
   return steinhart;
 }
 
-bool isOutOfRange(int hr, float spo2, float tempC, bool hasContact) {
+// The MAX30100 outputs physically implausible spikes (e.g. HR > 250) when
+// contact is poor rather than cleanly reporting "no signal" - treat those as
+// no contact instead of real vitals, or a flaky sensor will trigger false
+// alarms constantly.
+bool isPlausibleHr(int hr) {
+  return hr >= 25 && hr <= 240;
+}
+
+bool isPlausibleSpo2(float spo2) {
+  return spo2 >= 50 && spo2 <= 100;
+}
+
+bool isOutOfRangeNow(int hr, float spo2, float tempC, bool hasContact) {
   if (!hasContact) return false;
   if (hr > 0 && (hr < HR_MIN || hr > HR_MAX)) return true;
   if (spo2 > 0 && spo2 < SPO2_MIN) return true;
   if (!isnan(tempC) && (tempC < TEMP_MIN_C || tempC > TEMP_MAX_C)) return true;
   return false;
+}
+
+// Debounced across ALARM_CONFIRM_CYCLES so one noisy reading from a flaky
+// I2C bus doesn't latch the buzzer into sounding continuously.
+bool isOutOfRange(int hr, float spo2, float tempC, bool hasContact) {
+  if (isOutOfRangeNow(hr, spo2, tempC, hasContact)) {
+    consecutiveOutOfRange++;
+  } else {
+    consecutiveOutOfRange = 0;
+  }
+  return consecutiveOutOfRange >= ALARM_CONFIRM_CYCLES;
 }
 
 void updateIndicators(bool alarm) {
@@ -87,7 +156,30 @@ void updateIndicators(bool alarm) {
     buzzerOn = !buzzerOn;
     digitalWrite(PIN_BUZZER, buzzerOn ? HIGH : LOW);
     lastBeepToggleAt = millis();
+    if (buzzerOn) scanI2CBus("right after buzzer ON");
   }
+}
+
+void updateLcd(int hr, float spo2, float tempC, bool hasContact, bool alarm) {
+  lcd.setCursor(0, 0);
+  if (!sensorReady) {
+    lcd.print("HR:--  SpO2:--%  ");
+  } else if (!hasContact) {
+    lcd.print("No finger/contact ");
+  } else {
+    char line[17];
+    snprintf(line, sizeof(line), "HR:%-3d SpO2:%-3d%%", hr, (int)round(spo2));
+    lcd.print(line);
+  }
+
+  lcd.setCursor(0, 1);
+  char line2[17];
+  if (isnan(tempC)) {
+    snprintf(line2, sizeof(line2), "T:--.-C %s", alarm ? "ALARM!" : "        ");
+  } else {
+    snprintf(line2, sizeof(line2), "T:%4.1fC %s", tempC, alarm ? "ALARM!" : "        ");
+  }
+  lcd.print(line2);
 }
 
 void postReading(int hr, float spo2, float tempC, const char *signalQuality) {
@@ -134,18 +226,35 @@ void setup() {
   connectWiFi();
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  if (!pox.begin()) {
-    Serial.println("MAX30100 init failed, check wiring");
-  } else {
-    pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA);
+  Wire.setClock(I2C_CLOCK_HZ);
+  scanI2CBus("boot");
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Patient Monitor");
+  lcd.setCursor(0, 1);
+  lcd.print("Booting...");
+
+  if (pox.begin()) {
+    pox.setIRLedCurrent(MAX30100_LED_CURR_24MA);
     pox.setOnBeatDetectedCallback(onBeatDetected);
+    sensorReady = true;
     Serial.println("MAX30100 ready");
+  } else {
+    Serial.println("MAX30100 init failed, check wiring");
   }
 }
 
 void loop() {
   connectWiFi();
-  pox.update();
+  ensureSensorReady();
+  if (sensorReady) pox.update();
+
+  if (millis() - lastI2cScanAt > 10000) {
+    lastI2cScanAt = millis();
+    scanI2CBus("periodic");
+  }
 
   if (millis() - lastReportAt < REPORT_INTERVAL_MS) {
     // Still keep indicators live between reports using latest cached values.
@@ -153,18 +262,24 @@ void loop() {
   }
   lastReportAt = millis();
 
-  int hr = (int)round(pox.getHeartRate());
-  float spo2 = pox.getSpO2();
+  int rawHr = sensorReady ? (int)round(pox.getHeartRate()) : 0;
+  float rawSpo2 = sensorReady ? pox.getSpO2() : 0;
   float tempC = readTemperatureC();
 
+  // Fold implausible spikes (poor contact, not a real vital) back to "no
+  // contact" instead of letting them through as data or alarm triggers.
+  int hr = isPlausibleHr(rawHr) ? rawHr : 0;
+  float spo2 = isPlausibleSpo2(rawSpo2) ? rawSpo2 : 0;
+
   bool hasContact = hr > 0 && spo2 > 0;
-  const char *signalQuality = hasContact ? "ok" : "no_contact";
+  const char *signalQuality = !sensorReady ? "no_contact" : hasContact ? "ok" : "no_contact";
 
   bool alarm = isOutOfRange(hr, spo2, tempC, hasContact);
   updateIndicators(alarm);
+  updateLcd(hr, spo2, tempC, hasContact, alarm);
 
-  Serial.printf("HR=%d SpO2=%.1f Temp=%.1fC quality=%s alarm=%d\n",
-                hr, spo2, tempC, signalQuality, alarm);
+  Serial.printf("HR=%d SpO2=%.1f Temp=%.1fC quality=%s alarm=%d sensorReady=%d\n",
+                hr, spo2, tempC, signalQuality, alarm, sensorReady);
 
   postReading(hr, spo2, tempC, signalQuality);
 }
