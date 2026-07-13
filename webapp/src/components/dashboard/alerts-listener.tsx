@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
+import { playCriticalBeep } from "@/lib/alert-sound";
 import { createClient } from "@/lib/supabase/client";
 import type { Alert } from "@/lib/supabase/types";
 
@@ -32,10 +33,20 @@ export function AlertsListener() {
             patientName = data?.full_name ?? patientName;
           }
 
-          toast[alert.severity === "critical" ? "error" : "warning"](
-            `${alert.severity === "critical" ? "Critical" : "Warning"}: ${patientName}`,
-            { description: alert.message }
-          );
+          const title = `${alert.severity === "critical" ? "Critical" : "Warning"}: ${patientName}`;
+          toast[alert.severity === "critical" ? "error" : "warning"](title, {
+            description: alert.message,
+          });
+
+          if (alert.severity === "critical") {
+            playCriticalBeep();
+            if ("Notification" in window && Notification.permission === "granted") {
+              new Notification(title, {
+                body: alert.message,
+                tag: `alert-${alert.id}`,
+              });
+            }
+          }
 
           router.refresh();
         }

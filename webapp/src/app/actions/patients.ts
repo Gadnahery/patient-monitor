@@ -28,6 +28,13 @@ export async function createPatient(
   const room = String(formData.get("room") ?? "").trim() || null;
   const bed = String(formData.get("bed") ?? "").trim() || null;
   const date_of_birth = String(formData.get("date_of_birth") ?? "").trim() || null;
+  const phone = String(formData.get("phone") ?? "").trim() || null;
+  const sex = (String(formData.get("sex") ?? "").trim() || null) as
+    | "male"
+    | "female"
+    | "other"
+    | null;
+  const diagnosis = String(formData.get("diagnosis") ?? "").trim() || null;
 
   const { error } = await supabase.from("patients").insert({
     full_name,
@@ -35,12 +42,51 @@ export async function createPatient(
     room,
     bed,
     date_of_birth,
+    phone,
+    sex,
+    diagnosis,
     thresholds: DEFAULT_THRESHOLDS,
   });
 
   if (error) return { error: error.message };
 
   revalidatePath("/patients");
+  return { success: true };
+}
+
+export async function updatePatient(
+  _state: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const supabase = await createClient();
+
+  const patientId = String(formData.get("patient_id") ?? "");
+  if (!patientId) return { error: "Missing patient" };
+
+  const full_name = String(formData.get("full_name") ?? "").trim();
+  if (!full_name) return { error: "Full name is required" };
+
+  const mrn = String(formData.get("mrn") ?? "").trim() || null;
+  const room = String(formData.get("room") ?? "").trim() || null;
+  const bed = String(formData.get("bed") ?? "").trim() || null;
+  const date_of_birth = String(formData.get("date_of_birth") ?? "").trim() || null;
+  const phone = String(formData.get("phone") ?? "").trim() || null;
+  const sex = (String(formData.get("sex") ?? "").trim() || null) as
+    | "male"
+    | "female"
+    | "other"
+    | null;
+  const diagnosis = String(formData.get("diagnosis") ?? "").trim() || null;
+
+  const { error } = await supabase
+    .from("patients")
+    .update({ full_name, mrn, room, bed, date_of_birth, phone, sex, diagnosis })
+    .eq("id", patientId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/patients");
+  revalidatePath(`/patients/${patientId}`);
   return { success: true };
 }
 
@@ -56,6 +102,12 @@ export async function reactivatePatient(patientId: string) {
   await supabase.from("patients").update({ status: "active" }).eq("id", patientId);
   revalidatePath("/patients");
   revalidatePath(`/patients/${patientId}`);
+}
+
+export async function deletePatient(patientId: string) {
+  const supabase = await createClient();
+  await supabase.from("patients").delete().eq("id", patientId);
+  revalidatePath("/patients");
 }
 
 export async function updateThresholds(

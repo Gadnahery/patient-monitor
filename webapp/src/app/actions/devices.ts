@@ -32,6 +32,23 @@ export async function assignDevice(deviceId: string, patientId: string | null) {
   revalidatePath("/devices");
 }
 
+export async function renameDevice(
+  _state: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const supabase = await createClient();
+  const deviceId = String(formData.get("device_id") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!deviceId) return { error: "Missing device" };
+  if (!name) return { error: "Device name is required" };
+
+  const { error } = await supabase.from("devices").update({ name }).eq("id", deviceId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/devices");
+  return { success: true };
+}
+
 export async function deleteDevice(deviceId: string) {
   const supabase = await createClient();
   await supabase.from("devices").delete().eq("id", deviceId);

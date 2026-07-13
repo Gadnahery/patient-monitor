@@ -2,8 +2,9 @@ import { deleteDevice } from "@/app/actions/devices";
 import { AddDeviceDialog } from "@/components/dashboard/add-device-dialog";
 import { AssignDeviceSelect } from "@/components/dashboard/assign-device-select";
 import { CopyButton } from "@/components/dashboard/copy-button";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
+import { RenameDeviceDialog } from "@/components/dashboard/rename-device-dialog";
+import { ConfirmSubmitButton } from "@/components/dashboard/confirm-submit-button";
 import {
   Table,
   TableBody,
@@ -12,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { isDeviceOnline } from "@/lib/vitals";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DevicesPage() {
@@ -50,10 +50,14 @@ export default async function DevicesPage() {
           </TableHeader>
           <TableBody>
             {(devices ?? []).map((device) => {
-              const online = isDeviceOnline(device.last_seen_at);
               return (
                 <TableRow key={device.id}>
-                  <TableCell className="font-medium">{device.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1">
+                      {device.name}
+                      <RenameDeviceDialog deviceId={device.id} name={device.name} />
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
@@ -74,15 +78,21 @@ export default async function DevicesPage() {
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge variant={online ? "success" : "secondary"}>
-                      {online ? "Online" : "Offline"}
-                    </Badge>
+                    <DeviceStatusBadge
+                      deviceId={device.id}
+                      initialLastSeenAt={device.last_seen_at}
+                    />
                   </TableCell>
                   <TableCell className="text-right">
                     <form action={deleteDevice.bind(null, device.id)}>
-                      <Button variant="ghost" size="sm" type="submit">
+                      <ConfirmSubmitButton
+                        variant="ghost"
+                        size="sm"
+                        type="submit"
+                        confirmMessage={`Remove "${device.name}"? This cannot be undone.`}
+                      >
                         Remove
-                      </Button>
+                      </ConfirmSubmitButton>
                     </form>
                   </TableCell>
                 </TableRow>

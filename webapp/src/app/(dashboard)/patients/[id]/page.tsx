@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
 import { ThresholdsForm } from "@/components/dashboard/thresholds-form";
 import { VitalsChart } from "@/components/dashboard/vitals-chart";
 import {
@@ -57,19 +58,29 @@ export default async function PatientDetailPage({
               patient.mrn && `MRN ${patient.mrn}`,
               patient.room && `Room ${patient.room}`,
               patient.bed && `Bed ${patient.bed}`,
+              patient.sex && patient.sex[0].toUpperCase() + patient.sex.slice(1),
+              patient.phone,
               device && `Monitor: ${device.name}`,
             ]
               .filter(Boolean)
               .join(" · ") || "No details on file"}
           </p>
+          {patient.diagnosis && (
+            <p className="mt-1 text-sm text-muted-foreground">Diagnosis: {patient.diagnosis}</p>
+          )}
         </div>
-        <Badge
-          variant={
-            status === "critical" ? "destructive" : status === "warning" ? "warning" : status === "normal" ? "success" : "secondary"
-          }
-        >
-          {status === "no-data" ? "No signal" : status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {device && (
+            <DeviceStatusBadge deviceId={device.id} initialLastSeenAt={device.last_seen_at} />
+          )}
+          <Badge
+            variant={
+              status === "critical" ? "destructive" : status === "warning" ? "warning" : status === "normal" ? "success" : "secondary"
+            }
+          >
+            {status === "no-data" ? "No signal" : status}
+          </Badge>
+        </div>
       </div>
 
       <Card>

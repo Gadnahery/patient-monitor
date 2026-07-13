@@ -13,6 +13,9 @@ export type Patient = {
   date_of_birth: string | null;
   room: string | null;
   bed: string | null;
+  phone: string | null;
+  sex: "male" | "female" | "other" | null;
+  diagnosis: string | null;
   status: "active" | "discharged";
   thresholds: Thresholds;
   admitted_at: string;

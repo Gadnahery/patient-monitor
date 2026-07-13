@@ -36,7 +36,7 @@ export default async function DashboardLayout({
         fullName={profile?.full_name ?? user.email ?? "Clinician"}
         unacknowledgedCount={count ?? 0}
       />
-      <main className="flex-1 overflow-x-hidden p-4 md:p-6">{children}</main>
+      <main className="flex-1 overflow-x-hidden p-4 pb-28 md:p-6 md:pb-6">{children}</main>
       <AlertsListener />
     </div>
   );
