@@ -1,6 +1,14 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
+// Simulation - set to 1 to generate synthetic HR/SpO2/temp instead of
+// reading the MAX30100/thermistor. Useful for exercising the LCD/alerts/
+// Supabase pipeline while the sensor wiring isn't giving reliable data yet.
+// Set back to 0 once the real sensors are confirmed working.
+// ---------------------------------------------------------------------------
+#define SIMULATE_SENSORS 0
+
+// ---------------------------------------------------------------------------
 // Wi-Fi
 // ---------------------------------------------------------------------------
 #define WIFI_SSID     "Redmi Note 10 Pro"

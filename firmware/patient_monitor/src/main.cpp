@@ -12,6 +12,8 @@
 #include <ArduinoJson.h>
 #include <MAX30100_PulseOximeter.h>
 #include <LiquidCrystal_I2C.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 #include "config.h"
 
@@ -122,11 +124,19 @@ bool isPlausibleSpo2(float spo2) {
   return spo2 >= 50 && spo2 <= 100;
 }
 
+// A short/open thermistor divider (bad wiring, not a real patient reading)
+// produces numbers like -60C that aren't NaN but are physically nonsense -
+// exclude those from the alarm the same way isPlausibleHr/Spo2 do, or a
+// wiring fault makes the buzzer sound forever.
+bool isPlausibleTemp(float tempC) {
+  return !isnan(tempC) && tempC >= 10.0 && tempC <= 45.0;
+}
+
 bool isOutOfRangeNow(int hr, float spo2, float tempC, bool hasContact) {
   if (!hasContact) return false;
   if (hr > 0 && (hr < HR_MIN || hr > HR_MAX)) return true;
   if (spo2 > 0 && spo2 < SPO2_MIN) return true;
-  if (!isnan(tempC) && (tempC < TEMP_MIN_C || tempC > TEMP_MAX_C)) return true;
+  if (isPlausibleTemp(tempC) && (tempC < TEMP_MIN_C || tempC > TEMP_MAX_C)) return true;
   return false;
 }
 
@@ -211,6 +221,10 @@ void postReading(int hr, float spo2, float tempC, const char *signalQuality) {
 }
 
 void setup() {
+  // Disable the brownout detector: a dip from the buzzer/LED/sensor load on
+  // a marginal USB/5V supply can otherwise trip a false brownout reset.
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+
   Serial.begin(115200);
   delay(200);
 
@@ -246,6 +260,17 @@ void setup() {
   }
 }
 
+#if SIMULATE_SENSORS
+// Slowly-varying, always-plausible vitals so the LCD/alert/Supabase pipeline
+// can be exercised without the MAX30100/thermistor wired up or working.
+void simulateVitals(int &hr, float &spo2, float &tempC) {
+  float t = millis() / 1000.0f;
+  hr = 72 + (int)round(6.0 * sin(t / 6.0));
+  spo2 = 97.0 + 1.5 * sin(t / 9.0);
+  tempC = 36.8 + 0.3 * sin(t / 13.0);
+}
+#endif
+
 void loop() {
   connectWiFi();
   ensureSensorReady();
@@ -262,17 +287,29 @@ void loop() {
   }
   lastReportAt = millis();
 
+  int hr;
+  float spo2;
+  float tempC;
+  bool hasContact;
+  const char *signalQuality;
+
+#if SIMULATE_SENSORS
+  simulateVitals(hr, spo2, tempC);
+  hasContact = true;
+  signalQuality = "ok";
+#else
   int rawHr = sensorReady ? (int)round(pox.getHeartRate()) : 0;
   float rawSpo2 = sensorReady ? pox.getSpO2() : 0;
-  float tempC = readTemperatureC();
+  tempC = readTemperatureC();
 
   // Fold implausible spikes (poor contact, not a real vital) back to "no
   // contact" instead of letting them through as data or alarm triggers.
-  int hr = isPlausibleHr(rawHr) ? rawHr : 0;
-  float spo2 = isPlausibleSpo2(rawSpo2) ? rawSpo2 : 0;
+  hr = isPlausibleHr(rawHr) ? rawHr : 0;
+  spo2 = isPlausibleSpo2(rawSpo2) ? rawSpo2 : 0;
 
-  bool hasContact = hr > 0 && spo2 > 0;
-  const char *signalQuality = !sensorReady ? "no_contact" : hasContact ? "ok" : "no_contact";
+  hasContact = hr > 0 && spo2 > 0;
+  signalQuality = !sensorReady ? "no_contact" : hasContact ? "ok" : "no_contact";
+#endif
 
   bool alarm = isOutOfRange(hr, spo2, tempC, hasContact);
   updateIndicators(alarm);
