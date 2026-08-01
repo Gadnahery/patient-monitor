@@ -5,7 +5,7 @@ import { HeartPulse, Thermometer, Droplets, Clock } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { classifyReading, isStale } from "@/lib/vitals";
+import { classifyReading, formatVital, isStale } from "@/lib/vitals";
 import { cn } from "@/lib/utils";
 import type { Patient, VitalsReading } from "@/lib/supabase/types";
 
@@ -67,19 +67,19 @@ export function VitalsCard({
           <Metric
             icon={<HeartPulse className="size-4 text-chart-4" />}
             label="HR"
-            value={reading?.heart_rate ? `${reading.heart_rate}` : "--"}
+            value={reading?.heart_rate != null ? `${reading.heart_rate}` : "--"}
             unit="bpm"
           />
           <Metric
             icon={<Droplets className="size-4 text-chart-1" />}
             label="SpO2"
-            value={reading?.spo2 ? `${reading.spo2}` : "--"}
+            value={formatVital(reading?.spo2)}
             unit="%"
           />
           <Metric
             icon={<Thermometer className="size-4 text-chart-3" />}
             label="Temp"
-            value={reading?.temperature ? `${reading.temperature}` : "--"}
+            value={formatVital(reading?.temperature)}
             unit="°C"
           />
         </CardContent>
@@ -104,12 +104,12 @@ function Metric({
   unit: string;
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
         {icon}
         {label}
       </div>
-      <div className="text-xl font-semibold tabular-nums">
+      <div className="truncate text-xl font-semibold tabular-nums">
         {value}
         <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>
       </div>

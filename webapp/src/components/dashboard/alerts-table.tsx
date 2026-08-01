@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
+import { deleteAllAlerts, deleteAcknowledgedAlerts } from "@/app/actions/alerts";
 import { AlertActions } from "@/components/dashboard/alert-actions";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -78,6 +82,7 @@ export function AlertsTable({
   patients: Patient[];
 }) {
   const [alerts, setAlerts] = useState(initialAlerts);
+  const [pending, startTransition] = useTransition();
   const patientsById = useMemo(() => new Map(patients.map((p) => [p.id, p])), [patients]);
 
   useEffect(() => {
@@ -116,13 +121,51 @@ export function AlertsTable({
   }, []);
 
   const unacknowledged = alerts.filter((a) => !a.acknowledged);
+  const acknowledgedCount = alerts.length - unacknowledged.length;
 
   return (
     <Tabs defaultValue="open">
-      <TabsList>
-        <TabsTrigger value="open">Open ({unacknowledged.length})</TabsTrigger>
-        <TabsTrigger value="all">All ({alerts.length})</TabsTrigger>
-      </TabsList>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value="open">Open ({unacknowledged.length})</TabsTrigger>
+          <TabsTrigger value="all">All ({alerts.length})</TabsTrigger>
+        </TabsList>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || acknowledgedCount === 0}
+            onClick={() => {
+              if (!window.confirm(`Delete ${acknowledgedCount} acknowledged alert(s)?`)) return;
+              startTransition(async () => {
+                await deleteAcknowledgedAlerts();
+                setAlerts((prev) => prev.filter((a) => !a.acknowledged));
+                toast.success("Acknowledged alerts deleted");
+              });
+            }}
+          >
+            Clear acknowledged
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 text-destructive hover:text-destructive"
+            disabled={pending || alerts.length === 0}
+            onClick={() => {
+              if (!window.confirm(`Delete all ${alerts.length} alert(s) permanently? This cannot be undone.`))
+                return;
+              startTransition(async () => {
+                await deleteAllAlerts();
+                setAlerts([]);
+                toast.success("All alerts deleted");
+              });
+            }}
+          >
+            <Trash2 className="size-3.5" />
+            Delete all
+          </Button>
+        </div>
+      </div>
       <TabsContent value="open">
         <div className="rounded-lg border">
           <AlertsRows

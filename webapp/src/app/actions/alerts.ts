@@ -44,3 +44,23 @@ export async function deleteAlert(alertId: number) {
   revalidatePath("/alerts");
   revalidatePath("/");
 }
+
+export async function deleteAllAlerts() {
+  const supabase = await createClient();
+
+  // .neq on a column that's never -1 is a simple "match every row" filter -
+  // Supabase requires some filter on delete, it won't take an empty one.
+  await supabase.from("alerts").delete().neq("id", -1);
+
+  revalidatePath("/alerts");
+  revalidatePath("/");
+}
+
+export async function deleteAcknowledgedAlerts() {
+  const supabase = await createClient();
+
+  await supabase.from("alerts").delete().eq("acknowledged", true);
+
+  revalidatePath("/alerts");
+  revalidatePath("/");
+}

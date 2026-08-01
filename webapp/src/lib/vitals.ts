@@ -44,6 +44,15 @@ export function classifyReading(
   return worst;
 }
 
+// Postgres `numeric` columns round-trip as JS floats, so a value inserted as
+// 97.1 can come back as 97.09999999999999 or similar. Round for display so
+// vitals cards show a clean, fixed-width number instead of a long decimal
+// that can overflow its grid cell.
+export function formatVital(value: number | null | undefined, decimals = 1) {
+  if (value == null) return "--";
+  return value.toFixed(decimals);
+}
+
 export function isStale(reading: VitalsReading | null | undefined, staleMs = 60_000) {
   if (!reading) return true;
   return Date.now() - new Date(reading.recorded_at).getTime() > staleMs;
